@@ -118,7 +118,7 @@ test.each([
     [
         "[ [ <url> [ <x> <y> ]? , ]* <cursor-predefined> ]",
         'Cursor',
-        '`${`${TUrl}${` ${TX} ${TY}` | ""}`} ` | (string & {}) ${TCursorPredefined}`',
+        '`${`${`${TUrl}${` ${TX} ${TY}` | ""}`} ` | (string & {})} ${TCursorPredefined}`',
     ]
 ])("convertType", (type, key, expected) => {
 	expect(convertType(key, type)).toEqual(expected);

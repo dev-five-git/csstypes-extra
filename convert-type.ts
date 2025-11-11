@@ -8,11 +8,11 @@ import { toPascalCase } from "./to-pascalcase";
 export function convertType(key: string, type: string): string {
 	const ast = definitionSyntax.parse(type);
     console.log("ast", JSON.stringify(ast, null, 2));
-	const result = convertNode(key, ast);
+	const result = convertNode(key, ast, undefined);
 	return typeof result === "string" ? result : "";
 }
 
-function convertNode(key: string, node: DSNode, parent?: DSNode): string {
+function convertNode(key: string, node: DSNode, parent: DSNode | undefined): string {
 	switch (node.type) {
 		case "Keyword":
 			return node.name;
@@ -29,11 +29,11 @@ function convertNode(key: string, node: DSNode, parent?: DSNode): string {
 		}
 		case "Multiplier": {
             if(node.max === 0 && node.min === 0) {
-                return `\`\${${convertNode(key, node.term)}} \` | (string & {})`;
+                return `\`\${${convertNode(key, node.term, node)}} \` | (string & {})`;
             }
             
 			if (node.max === 0) {
-				const k = convertNode(key, node.term);
+				const k = convertNode(key, node.term, node);
 				return wrapLoop(node.term.type === "Keyword" || node.term.type === "Property" ? `"${k}"` : k, key);
 			} else {
 				if (
@@ -42,21 +42,21 @@ function convertNode(key: string, node: DSNode, parent?: DSNode): string {
 					parent.terms.length > 1
 				) {
 					if (parent.terms.indexOf(node) === 0)
-						return `\`\${${convertNode(key, node.term)}} \` | ""`;
+						return `\`\${${convertNode(key, node.term, node)}} \` | ""`;
 					else {
                         if(node.term.type === "Keyword" || (node.term.type === "Group" && node.term.terms.length > 1 && !node.term.terms.some((term) => term.type === "Group" || term.type === "Multiplier"))) {
-                            return `\` ${convertNode(key, node.term)}\` | ""`;
+                            return `\` ${convertNode(key, node.term, node)}\` | ""`;
                         }
-                        return `\` \${${convertNode(key, node.term)}}\` | ""`;
+                        return `\` \${${convertNode(key, node.term, node)}}\` | ""`;
                     }
 				}
 				const contents = [];
 				for (let i = 0; i < node.min; i++) {
-					const k = convertNode(key, node.term);
+					const k = convertNode(key, node.term, node);
 					contents.push(`\${${k}}`);
 				}
 				for (let i = node.min; i < node.max; i++) {
-					const k = convertNode(key, node.term);
+					const k = convertNode(key, node.term, node);
 					contents.push(`\${\` \${${k}}\` | ""}`);
 				}
 				return contents.join("");
@@ -123,7 +123,6 @@ function convertNode(key: string, node: DSNode, parent?: DSNode): string {
 					);
 				default:
                     if (node.terms.length > 1) {
-                        console.log("parent", node)
                         const wrap = !!parent || node.terms.some((term) => term.type === "Multiplier" && term.min > 0);
                         if (wrap) {
                             return `\`${node.terms.map((node) => {
