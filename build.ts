@@ -2,7 +2,7 @@ import { convertType } from './convert-type'
 import { toCamelCase } from './to-camelcase'
 import { toPascalCase } from './to-pascalcase'
 
-let output = `/** biome-ignore-all lint/complexity/noBannedTypes: <this is a generated file> */\nexport as namespace CSS;\nexport interface CustomColors{}\n`
+let output = `// biome-ignore lint/suspicious/noEmptyInterface: <explanation>\nexport interface CustomColors{}\nexport as namespace CSS;\n`
 
 const syntaxes = (await fetch(
   'https://raw.githubusercontent.com/mdn/data/refs/heads/main/css/syntaxes.json',
@@ -21,9 +21,31 @@ const properties = (await fetch(
   {
     syntax: string
     status: string
+    computed?: string[] | string
   }
 >
 
+const atRules = (await fetch(
+  'https://raw.githubusercontent.com/mdn/data/refs/heads/main/css/at-rules.json',
+).then((res) => res.json())) as Record<
+  string,
+  {
+    syntax: string
+    status: string
+    computed?: string[] | string
+  }
+>
+
+const selectors = (await fetch(
+  'https://raw.githubusercontent.com/mdn/data/refs/heads/main/css/selectors.json',
+).then((res) => res.json())) as Record<
+  string,
+  {
+    syntax: string
+    status: string
+    computed?: string[] | string
+  }
+>
 const customSyntaxes = {
   string: {
     syntax: '(string & {})',
@@ -45,8 +67,11 @@ const customSyntaxes = {
 
 Object.assign(syntaxes, customSyntaxes)
 
-const standardProperties: string[] = []
-const vendorProperties: [string, { syntax: string; status: string }][] = []
+const standardPropertyTypes: string[] = []
+const standardLonghandProperties: [string, { syntax: string; status: string }][] = []
+const standardShorthandProperties: [string, { syntax: string; status: string }][] = []
+const vendorLonghandProperties: [string, { syntax: string; status: string }][] = []
+const vendorShorthandProperties: [string, { syntax: string; status: string }][] = []
 for (const [property, value] of Object.entries(properties)) {
   // skip vendor prefixed properties
   if (property.startsWith('--')) continue
@@ -55,25 +80,62 @@ for (const [property, value] of Object.entries(properties)) {
     property.startsWith('-webkit-') ||
     property.startsWith('-moz-')
   ) {
-    vendorProperties.push([property, value])
+    if(Array.isArray(value.computed))
+      vendorShorthandProperties.push([property, value])
+    else
+      vendorLonghandProperties.push([property, value])
     continue
   }
   if (value.status !== 'standard') continue
-  output += `export type ${toPascalCase(property)} = ${convertType(value.syntax, syntaxes)};\n`
-  standardProperties.push(property)
+  if(Array.isArray(value.computed)) 
+    standardShorthandProperties.push([property, value])
+  else
+    standardLonghandProperties.push([property, value])
 }
 
-output += `export interface StandardProperties {
-${standardProperties.map((p) => `  ${toCamelCase(p)}: ${toPascalCase(p)}`).join('\n')}
+output += `export interface StandardLonghandProperties {
+${standardLonghandProperties.map(([p, _]) => `  ${toCamelCase(p)}?: Property.${toPascalCase(p)} | undefined`).join('\n')}
 }\n`
 
-for (const [property, value] of vendorProperties) {
-  output += `export type ${toPascalCase(property)} = ${convertType(value.syntax, syntaxes)};\n`
+output += `export interface StandardShorthandProperties {
+${standardShorthandProperties.map(([p, _]) => `  ${toCamelCase(p)}?: Property.${toPascalCase(p)} | undefined`).join('\n')}
+}\n`
+
+output += `export interface VendorLonghandProperties {
+${vendorLonghandProperties.map(([p, _]) => `  ${toCamelCase(p).replace(/^Ms/, 'ms')}?: Property.${toPascalCase(p)} | undefined`).join('\n')}
+}\n`
+
+output += `export interface VendorShorthandProperties {
+${vendorShorthandProperties.map(([p, _]) => `  ${toCamelCase(p).replace(/^Ms/, 'ms')}?: Property.${toPascalCase(p)} | undefined`).join('\n')}
+}\n`
+
+
+// AtRules
+output += `export type AtRules = ${Object.keys(atRules).map((p) => `"${p}"`).join(' | ')}\n`
+
+// advenced pseudos
+output += `export type AdvancedPseudos = ${Object.keys(selectors).filter((p) => p.includes('(') && p.includes(')')).map((p) => `"${p}"`).join(' | ')}\n`
+output += `export type SimplePseudos = ${Object.keys(selectors).filter((p) => !p.includes('(') && !p.includes(')')).map((p) => `"${p}"`).join(' | ')}\n`
+output += `export type Pseudos = AdvancedPseudos | SimplePseudos\n`
+
+
+
+output += `export namespace Property {\n`
+for (const [property, value] of standardLonghandProperties) {
+  output += `  export type ${toPascalCase(property)} = ${convertType(value.syntax, syntaxes)};\n`
+}
+for (const [property, value] of standardShorthandProperties) {
+  output += `  export type ${toPascalCase(property)} = ${convertType(value.syntax, syntaxes)};\n`
 }
 
-output += `export interface VendorProperties {
-${vendorProperties.map(([p, _]) => `  ${toCamelCase(p)}: ${toPascalCase(p)}`).join('\n')}
-}\n`
+for (const [property, value] of vendorLonghandProperties) {
+  output += `  export type ${toPascalCase(property)} = ${convertType(value.syntax, syntaxes)};\n`
+}
+for (const [property, value] of vendorShorthandProperties) {
+  output += `  export type ${toPascalCase(property)} = ${convertType(value.syntax, syntaxes)};\n`
+}
+
+output += `}\n`
 
 for (const [property, value] of Object.entries(syntaxes)) {
   if (
@@ -89,9 +151,9 @@ for (const [property, value] of Object.entries(syntaxes)) {
 }
 
 Bun.write('src/index.d.ts', output)
-
 // declare module "./src" {
 // 	interface CustomColors {
 // 		$example: unknown
 // 	}
 // }
+
